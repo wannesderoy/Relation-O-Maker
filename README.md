@@ -3,7 +3,7 @@ SUMMARY
 =======
 
 This module provides an easy, super fast way to create related nodes. 
-Drupal development knowledge is necessery to set it up, but after that editors can easily related notes to each other.
+Drupal development knowledge is necessery to set it up, but afterwards editors can easily relate notes to each other.
 A use case could be: A commerce site with a lot of Clothing products. The content admin wants to show other red pants of various brands & kinds on every red pants product detail.
 In stead of adding the 'red pants' taxonomy term to every new red pants he adds to the system. He can go to the Relation-O-Maker view, en simply, litteraly click related products together.
 Not only red pants, but also a nice jeans vest that fits nicly on the red pants.
