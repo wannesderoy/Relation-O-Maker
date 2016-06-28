@@ -1,0 +1,327 @@
+<?php
+
+/**
+ * @file
+ * Relation-O-Maker (relation_o_maker) views plugin and image field formatter
+ * Rapidly create relations between nodes with via this view,
+ * by litteraly 'clicking' the nodes together
+ */
+
+/**
+ * Implements hook_views_api().
+ */
+function relation_o_maker_views_api() {
+  return array("api" => "3.0");
+}
+
+/**
+ * Implements hook_menu().
+ */
+function relation_o_maker_menu() {
+
+  $items = array();
+
+  $items['ajax/relation-o-maker/upload'] = array(
+    'title' => t('Relation-O-Maker'),
+    'page callback' => 'relation_o_maker_ajax_upload',
+    'access arguments' => array('Administer vocabularies and terms'),
+    'type' => MENU_CALLBACK,
+  );
+
+  return $items;
+}
+
+/*
+ * Implements hook_image_styles_alter().
+ */
+function relation_o_maker_image_default_styles() {
+  $styles['rom-image-style'] = array(
+    'label' => 'Relation-O-Maker Thumb',
+    'effects' => array(
+      array(
+        'name' => 'image_scale_and_crop',
+        'data' => array(
+          'width' => 150,
+          'height' => 150,
+        ),
+        'weight' => 0,
+      ),
+    ),
+  );
+
+  return $styles;
+}
+
+/*
+ * Handle the ajax request
+ * - recieve the post data
+ * - validate & security checks
+ * - create term names for al node sets
+ * - save tid on nodes
+ *
+ * @return drupal json object containing status & message
+ *
+ */
+/**
+ * @return string
+ * @throws \Exception
+ */
+function relation_o_maker_ajax_upload() {
+  if (!empty($_POST)) {
+    // Get nids & timestamps from post data
+    $vars['nids']         = $_POST['nids'];
+    $vars['timestamps']   = $_POST['timestamp'];
+    $vars['termName']     = $_POST['termName'];
+    $vars['term']         = $_POST['term'];
+
+    // create the result array for debuggin purposses
+    $result = $_POST['term'];
+    $result['vars'] = $vars;
+
+    // Load the relations vocabulary.
+    $vocName = taxonomy_vocabulary_machine_name_load('relation_o_maker');
+
+    // Loop over the collection of sets.
+    foreach($vars['nids'] as $key => $setId) {
+
+      // If node must be added to existing term.
+      if ($vars['term'][0] == 'old') {
+
+        // Loop over the nids in the set
+        foreach ($setId as $nid => $value) {
+          $node = node_load($value);
+          $node->field_relation[LANGUAGE_NONE][]['tid'] = $vars['termName'][0];
+          // Save newly created tid on each node
+          node_save($node);
+        }
+
+      }
+      // If node must me added to new term.
+      else {
+        // Reset the term name to default after every loop.
+        $termName = '';
+
+        // Construct term name based on random string OR termName & timestamp.
+        if ($vars['termName'][$key] == '') {
+          $termName = randomStr(10) . '_' . $vars['timestamps'][$key];
+        }
+        else {
+          $termName = $vars['termName'][$key] . '_' . $vars['timestamps'][$key];
+        }
+
+        // Create new taxonomy term.
+        $term = new stdClass();
+        $term->name = $termName;
+        $term->vid = $vocName->vid;
+        taxonomy_term_save($term);
+        // Get newly created term id
+        $tid = $term->tid;
+
+        // Loop over the nids in the set
+        foreach ($setId as $nid => $value) {
+          $node = node_load($value);
+          // check if field_relation exist on node, throw error and exit if so.
+          if (isset($node->field_relation)) {
+            $node->field_relation[LANGUAGE_NONE][]['tid'] = $tid;
+            // Save newly created tid on each node
+            node_save($node);
+          }
+          else {
+            $result['status'][] = FALSE;
+            $result['message'][] = 'field_relation was not found';
+            print drupal_json_encode($result);
+            exit();
+          }
+        }
+      }
+
+    }
+    $result['status'][] = TRUE;
+    $result['message'][] = 'successfully saved new relations';
+
+    print drupal_json_encode($result);
+
+  }
+  else {
+    return 'No post data recieved.';
+  }
+}
+
+/**
+ * Implements hook_field_formatter_info().
+ *
+ * @see field_example_field_formatter_view()
+ */
+function relation_o_maker_field_formatter_info() {
+  return array(
+    'relation_o_maker' => array(
+      'label' => t('Relation-O-Maker'),
+      'field types' => array(
+        'image',
+      ),
+      'settings' => array(
+        'image_style' => '',
+      ),
+    ),
+  );
+}
+
+/**
+ * Implements hook_field_formatter_settings_form().
+ */
+function relation_o_maker_field_formatter_settings_form($field, $instance, $view_mode, $form, &$form_state) {
+  $display = $instance['display'][$view_mode];
+  $settings = $display['settings'];
+
+  $image_styles = image_style_options(FALSE);
+  $element['image_style'] = array(
+    '#title' => t('Image style'),
+    '#type' => 'select',
+    '#default_value' => $settings['image_style'],
+    '#empty_option' => t('None (original image)'),
+    '#options' => $image_styles,
+  );
+
+  return $element;
+}
+
+/**
+ * Implements hook_field_formatter_settings_summary().
+ */
+function relation_o_maker_field_formatter_settings_summary($field, $instance, $view_mode) {
+  $display = $instance['display'][$view_mode];
+  $settings = $display['settings'];
+
+  $summary = array();
+
+  $image_styles = image_style_options(FALSE);
+  // Unset possible 'No defined styles' option.
+  unset($image_styles['']);
+  // Styles could be lost because of enabled/disabled modules that defines
+  // their styles in code.
+  if (isset($image_styles[$settings['image_style']])) {
+    $summary[] = t('Image style: @style', array(
+      '@style' => $image_styles[$settings['image_style']],
+    ));
+  }
+  else {
+    $summary[] = t('Original image');
+  }
+
+  return implode('<br />', $summary);
+}
+
+/**
+ * Implements hook_field_formatter_view().
+ */
+function relation_o_maker_field_formatter_view($entity_type, $entity, $field, $instance, $langcode, $items, $display) {
+  $element = array();
+
+  switch ($display['type']) {
+    // This formatter simply outputs the field as text and with a color.
+    case 'relation_o_maker':
+      // Display the existing content.
+      foreach ($items as $delta => $item) {
+
+        $value = array(
+          '#theme' => 'image_formatter',
+          '#item' => $item,
+          '#image_style' => $display['settings']['image_style'],
+          '#path' => '',
+        );
+        $value = drupal_render($value);
+
+        $element[$delta] = array(
+          '#type' => 'html_tag',
+          '#tag' => 'div',
+          '#attributes' => array(
+            'class'     => 'relation-o-maker-image',
+            'data-nid'  => entity_id($entity_type, $entity),
+          ),
+          '#value' => $value,
+        );
+      }
+      break;
+  }
+  return $element;
+}
+
+/**
+ * Split items by rows and columns.
+ * - Stolen from Drupal 8 template_preprocess_views_view_grid().
+ *
+ * @param $vars
+ * @param $columns
+ * @param bool $horizontal
+ *
+ * @return array
+ *
+ * @TODO: Use array_chunk().
+ */
+function _relation_o_maker_split_rows($vars, $columns, $horizontal = TRUE) {
+  $col = 0;
+  $row = 0;
+  $items = array();
+  $remainders = count($vars['rows']) % $columns;
+  $num_rows = floor(count($vars['rows']) / $columns);
+
+  // Iterate over each rendered views result row.
+  foreach ($vars['rows'] as $item) {
+
+    // Add the item.
+    if ($horizontal) {
+      $items[$row]['content'][$col]['content'] = $item;
+    }
+    else {
+      $items[$col]['content'][$row]['content'] = $item;
+    }
+
+    // Increase, decrease or reset appropriate integers.
+    if ($horizontal) {
+      if ($col == 0 && $col != ($columns - 1)) {
+        $col++;
+      }
+      elseif ($col >= ($columns - 1)) {
+        $col = 0;
+        $row++;
+      }
+      else {
+        $col++;
+      }
+    }
+    else {
+      $row++;
+      if (!$remainders && $row == $num_rows) {
+        $row = 0;
+        $col++;
+      }
+      elseif ($remainders && $row == $num_rows + 1) {
+        $row = 0;
+        $col++;
+        $remainders--;
+      }
+    }
+  }
+
+  return $items;
+}
+
+/**
+ * Create random string of variable length.
+ * - Stolen from Laravel Str Class, helper function
+ *
+ * @param $length, default = 16
+ *
+ * @return string
+ *
+ */
+function randomStr($length = 16) {
+  if (function_exists('openssl_random_pseudo_bytes')) {
+    $bytes = openssl_random_pseudo_bytes($length * 2);
+    if ($bytes === false) {
+      return false;
+    }
+    return substr(str_replace(array('/', '+', '='), '', base64_encode($bytes)), 0, $length);
+  }
+  return false;
+}

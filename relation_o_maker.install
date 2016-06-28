@@ -1,0 +1,15 @@
+<?php
+/**
+ * @file
+ * Install functions for the relation_o_maker module.
+ */
+
+/*
+ * Implements hook_install();
+ */
+function relation_o_maker_install() {
+  taxonomy_vocabulary_save((object) array(
+    'name' => 'Relation-O-Maker',
+    'machine_name' => 'relation_o_maker',
+  ));
+}

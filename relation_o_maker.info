@@ -1,0 +1,11 @@
+name = Relation-O-Maker
+description = A Drupal module that enables a site admin to easily create taxonomy relations between nodes, via a views 3 plugin.
+package = Calibrate
+core = 7.x
+
+dependencies[] = ds
+dependencies[] = views
+dependencies[] = entity
+dependencies[] = jquery_update
+
+files[] = views/relation_o_maker_grid_plugin_style.inc
